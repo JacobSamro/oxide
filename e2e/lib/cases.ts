@@ -51,21 +51,26 @@ async function coldThenWarm(oxide: OxideHandle, pm: ManagerAdapter, fixture: str
     const afterWarm = await snapshot(oxide.metrics)
     const warmDelta = delta(afterCold, afterWarm)
 
-    // The warm install MUST hit the metadata cache — that's the whole point of the proxy.
-    if (warmDelta.metaHits === 0) {
+    // The contract: a warm install must not touch upstream. With a lockfile, modern PMs
+    // (npm ci, bun --frozen-lockfile, yarn --frozen, pnpm --frozen) skip metadata entirely
+    // and go straight to tarball URLs from the lockfile — that's fine, as long as those
+    // tarballs come from oxide's cache and not npmjs.
+    if (warmDelta.upstreamMetadata > 0 || warmDelta.upstreamTarball > 0) {
       return fail('cold-then-warm',
-        `expected metadata hits on warm install, got 0 (delta: ${JSON.stringify(warmDelta)})`,
+        `warm install hit upstream (${warmDelta.upstreamMetadata} metadata, ${warmDelta.upstreamTarball} tarballs) — expected 0 (delta: ${JSON.stringify(warmDelta)})`,
         t0)
     }
-    // No new upstream metadata fetches on warm.
-    if (warmDelta.upstreamMetadata > 0) {
+    // Sanity: oxide should have actually served *something*, otherwise we're not really
+    // testing the cache.
+    const served = warmDelta.metaHits + warmDelta.tarballHits
+    if (served === 0) {
       return fail('cold-then-warm',
-        `warm install issued ${warmDelta.upstreamMetadata} upstream metadata requests (expected 0)`,
+        `warm install produced 0 cache hits — oxide didn't serve anything (delta: ${JSON.stringify(warmDelta)})`,
         t0)
     }
 
     return { name: 'cold-then-warm', ok: true, durationMs: performance.now() - t0,
-      details: `cold misses=${coldDelta.metaMisses} warm hits=${warmDelta.metaHits}` }
+      details: `cold misses=${coldDelta.metaMisses} warm hits=meta:${warmDelta.metaHits} tar:${warmDelta.tarballHits}` }
   } finally { cleanup(ctx) }
 }
 
