@@ -1,0 +1,9 @@
+{
+  "name": "oxide-e2e-scoped",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "@types/node": "20.11.0",
+    "@sindresorhus/is": "6.3.1"
+  }
+}

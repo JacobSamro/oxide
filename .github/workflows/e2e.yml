@@ -1,0 +1,140 @@
+name: E2E
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build oxide
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo build --release
+        run: cargo build --release -p oxide-server
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: oxide-binary
+          path: target/release/oxide
+          retention-days: 1
+
+  e2e:
+    name: E2E (${{ matrix.pm }})
+    needs: [build]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Versions match the Verdaccio matrix, plus bun.
+        # `skip` rows have adapters not yet implemented — see e2e/managers/TODO.md.
+        include:
+          - { pm: 'npm@7',          skip: false }
+          - { pm: 'npm@8',          skip: false }
+          - { pm: 'npm@9',          skip: false }
+          - { pm: 'npm@10',         skip: false }
+          - { pm: 'npm@11',         skip: false }
+          - { pm: 'bun@latest',     skip: false }
+          - { pm: 'bun@1.1',        skip: false }
+          - { pm: 'bun@1.2',        skip: false }
+          - { pm: 'pnpm@9',         skip: true  }
+          - { pm: 'pnpm@10',        skip: true  }
+          - { pm: 'yarn-classic',   skip: true  }
+          - { pm: 'yarn-modern@2',  skip: true  }
+          - { pm: 'yarn-modern@3',  skip: true  }
+          - { pm: 'yarn-modern@4',  skip: true  }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip
+        if: matrix.skip
+        run: |
+          echo "Skipping ${{ matrix.pm }} — adapter not yet implemented (see e2e/managers/TODO.md)"
+          exit 0
+
+      - name: Set up Node 20
+        if: ${{ !matrix.skip }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Resolve bun version
+        if: ${{ !matrix.skip }}
+        id: bunver
+        # When the matrix entry IS bun, install that exact version. For non-bun rows we
+        # still want bun on PATH (the e2e CLI itself runs under bun) — use latest.
+        run: |
+          pm='${{ matrix.pm }}'
+          case "$pm" in
+            bun@latest) echo "v=latest" >> "$GITHUB_OUTPUT" ;;
+            bun@*)      echo "v=${pm#bun@}.x" >> "$GITHUB_OUTPUT" ;;
+            *)          echo "v=latest" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Set up Bun
+        if: ${{ !matrix.skip }}
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bunver.outputs.v }}
+
+      - name: Install npm version
+        if: ${{ !matrix.skip && startsWith(matrix.pm, 'npm@') }}
+        run: |
+          ver="${{ matrix.pm }}"
+          ver="${ver#npm@}"
+          npm install -g "npm@${ver}"
+          npm --version
+
+      - name: Install pnpm via corepack
+        if: ${{ !matrix.skip && startsWith(matrix.pm, 'pnpm@') }}
+        run: |
+          ver="${{ matrix.pm }}"
+          ver="${ver#pnpm@}"
+          corepack enable
+          corepack prepare "pnpm@${ver}" --activate
+          pnpm --version
+
+      - name: Install yarn-classic
+        if: ${{ !matrix.skip && matrix.pm == 'yarn-classic' }}
+        run: |
+          npm install -g yarn@1
+          yarn --version
+
+      - name: Install yarn-modern via corepack
+        if: ${{ !matrix.skip && startsWith(matrix.pm, 'yarn-modern@') }}
+        run: |
+          ver="${{ matrix.pm }}"
+          ver="${ver#yarn-modern@}"
+          corepack enable
+          corepack prepare "yarn@${ver}.0.0" --activate
+          yarn --version
+
+      - name: Download oxide binary
+        if: ${{ !matrix.skip }}
+        uses: actions/download-artifact@v4
+        with:
+          name: oxide-binary
+          path: target/release
+      - name: Make oxide executable
+        if: ${{ !matrix.skip }}
+        run: chmod +x target/release/oxide
+
+      - name: Install e2e deps
+        if: ${{ !matrix.skip }}
+        working-directory: e2e
+        run: bun install --frozen-lockfile || bun install
+
+      - name: Run e2e
+        if: ${{ !matrix.skip }}
+        working-directory: e2e
+        run: bun run e2e --pm "${{ matrix.pm }}" -v
+
+      - name: Show oxide data dir on failure
+        if: ${{ !matrix.skip && failure() }}
+        run: ls -la /tmp/oxide-* 2>/dev/null || true

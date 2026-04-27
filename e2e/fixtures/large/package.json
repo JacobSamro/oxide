@@ -1,0 +1,9 @@
+{
+  "name": "oxide-e2e-large",
+  "version": "0.0.0",
+  "private": true,
+  "comment": "Used to exercise the large-metadata path. The /npm package metadata is multi-MB.",
+  "dependencies": {
+    "npm": "10.9.0"
+  }
+}

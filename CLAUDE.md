@@ -105,6 +105,24 @@ either redirects (default) or serves the same app.
   for tarballs so all concurrent subscribers receive the live byte stream.
 - Metrics labels are stable — adding a label is a breaking change for dashboards.
 
+## E2E testing
+
+`e2e/` is a separate Bun workspace. The CLI (`bun run e2e --pm <spec>`) spawns its own
+oxide instance on an ephemeral port (or `--registry <url>` to target an external one),
+runs each test case in a sandboxed temp dir with a per-test `HOME`, and asserts via
+deltas on `/metrics`. CI matrix lives in `.github/workflows/e2e.yml`.
+
+When adding a new PM adapter:
+1. Implement `e2e/managers/<pm>.ts` against `ManagerAdapter`.
+2. Wire it in `e2e/managers/index.ts`.
+3. Flip `skip: true` → `skip: false` on the matching matrix row.
+4. Verify locally with `bun run e2e --pm <spec> -v`.
+
+When adding a new test case:
+1. Add it to `e2e/lib/cases.ts` (`runAll`).
+2. Use `snapshot(oxide.metrics)` and `delta(...)` for assertions; absolute counter
+   values are not stable across cases in a single run.
+
 ## Common tasks
 
 - **Run cargo check after touching the proxy**: `cargo check`.

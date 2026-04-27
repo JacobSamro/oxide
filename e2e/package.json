@@ -1,0 +1,13 @@
+{
+  "name": "oxide-e2e",
+  "private": true,
+  "type": "module",
+  "bin": { "oxide-e2e": "./bin/oxide-e2e.ts" },
+  "scripts": {
+    "e2e": "bun ./bin/oxide-e2e.ts"
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "typescript": "^5.6.3"
+  }
+}

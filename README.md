@@ -44,6 +44,21 @@ bun run dev                 # http://localhost:3000
 First visit redirects to `/setup` to create the initial admin. After login, configure
 **Settings → Domain / SSL / S3**.
 
+## End-to-end testing
+
+A Bun-based runner spins up oxide on a random port, drives a real package manager against
+it, and asserts on `/metrics` deltas (cache hits, upstream calls, coalescing).
+
+```bash
+cd e2e
+bun install
+bun run e2e --pm npm@10
+bun run e2e --pm bun@latest
+```
+
+CI runs the full matrix (`npm@7..11`, `bun@1.1|1.2|latest`, plus stubbed pnpm/yarn rows)
+in `.github/workflows/e2e.yml`. See `e2e/managers/TODO.md` for the adapter backlog.
+
 ## Performance highlights
 
 - **Singleflight coalescing** prevents thundering herds on cold-cache concurrent requests.
