@@ -25,9 +25,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/-/npm/v1/security/audits/quick", post(audit::audit))
         .route("/-/npm/v1/security/advisories/bulk", post(audit::audit))
 
-        // npm auth (login / whoami / logout)
-        .route("/-/user/org.couchdb.user::name", put(npm_auth::login_or_create_user))
-        .route("/-/user/:name", put(npm_auth::login_or_create_user))
+        // npm auth. The login URL is /-/user/org.couchdb.user:<name>, which lands here as a
+        // single path segment captured by `:userpath`. The handler ignores the segment value
+        // and authenticates from the body (npm sends name+password there anyway).
+        .route("/-/user/:userpath", put(npm_auth::login_or_create_user))
         .route("/-/whoami", get(npm_auth::whoami))
         .route("/-/user/token/:token", delete(npm_auth::logout))
 

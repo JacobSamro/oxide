@@ -27,12 +27,11 @@ pub struct LoginBody {
 
 pub async fn login_or_create_user(
     State(state): State<Arc<AppState>>,
-    Path(name_in_path): Path<String>,
+    Path(_userpath): Path<String>,
     Json(body): Json<LoginBody>,
 ) -> Response {
-    // The path looks like `org.couchdb.user:alice` or just `alice`. We don't enforce a match —
-    // the body's `name` is what npm uses to authenticate.
-    let _ = name_in_path;
+    // The path looks like `org.couchdb.user:alice` or just `alice`; we don't enforce a
+    // match — the body's `name` is what npm uses to authenticate.
 
     let db = match state.db.as_ref() {
         Some(d) => d.clone(),
