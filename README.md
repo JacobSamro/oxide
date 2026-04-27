@@ -1,69 +1,83 @@
 # oxide
 
-A Rust npm registry proxy/cache (Rust-Rite) plus a Nuxt 4 admin UI for workspace/team/member
-management. The Rust binary terminates TLS directly via Let's Encrypt — no reverse proxy required.
+A faster npm registry, written in Rust.
 
-## Layout
+Point your installs at oxide instead of npmjs.org and you get caching, request
+coalescing, stale-while-revalidate, and sensible behavior when npmjs is slow or
+rate-limiting you. If you've watched ten CI runs hammer the same `lodash`
+metadata at the same time, or had `npm install` hang for two minutes because
+of a 429, that's the problem oxide solves.
 
-- `crates/oxide-server` — the Rust proxy (binary `oxide`)
-- `web/` — the Nuxt 4 admin UI (Bun runtime, `bun:sqlite`)
-- `data/oxide.db` — single SQLite file shared by both halves
+## What you get
 
-## Run the proxy
+- One binary. Fine on a 2-CPU VM.
+- HTTPS via Let's Encrypt, built in. No nginx or Caddy in front of it.
+- An admin UI for domains, SSL, S3 storage, and the workspace/team/member stuff.
+- Works with npm, pnpm, yarn, and bun out of the same registry URL.
 
-```bash
-cargo run -p oxide-server
-# custom config:
-cargo run -p oxide-server -- --config oxide.yaml
-```
-
-Defaults: HTTP `:80`, HTTPS `:443`. With no domain configured (fresh install), only HTTP serves.
-Once an admin sets a domain + SSL email in the UI, the proxy obtains a Let's Encrypt cert
-(via `rustls-acme`) and starts serving HTTPS automatically.
-
-Endpoints:
-- `GET /:package`, `GET /:scope/:package` — metadata (full + abbreviated by `Accept`)
-- `GET /:package/-/:file` and scoped variant — tarballs (streamed)
-- `POST /-/npm/v1/security/audits` — audit (configurable mode)
-- `DELETE /-/oxide/cache/:package` — invalidate metadata
-- `POST /-/oxide/reload` — re-read settings from sqlite
-- `GET /metrics`, `GET /-/health`, `GET /-/ping`
-
-## Run the admin UI
-
-Requires [Bun](https://bun.com).
+## Run it
 
 ```bash
-cd web
-cp .env.example .env       # edit OXIDE_PROXY_URL etc.
-bun install
-bunx shadcn-vue@latest add card button input label textarea dialog tabs select table badge checkbox
-bun run dev                 # http://localhost:3000
+cargo run --release -p oxide-server
 ```
 
-First visit redirects to `/setup` to create the initial admin. After login, configure
-**Settings → Domain / SSL / S3**.
-
-## End-to-end testing
-
-A Bun-based runner spins up oxide on a random port, drives a real package manager against
-it, and asserts on `/metrics` deltas (cache hits, upstream calls, coalescing).
+Then in another terminal:
 
 ```bash
-cd e2e
-bun install
-bun run e2e --pm npm@10
-bun run e2e --pm bun@latest
+cd web && bun install && bun run dev
 ```
 
-CI runs the full matrix (`npm@7..11`, `bun@1.1|1.2|latest`, plus stubbed pnpm/yarn rows)
-in `.github/workflows/e2e.yml`. See `e2e/managers/TODO.md` for the adapter backlog.
+Visit `http://localhost:3000`, create your admin user, go to Settings, fill in
+your domain, and flip on HTTPS. Oxide gets a Let's Encrypt cert on its own
+once that's saved.
 
-## Performance highlights
+## Point clients at it
 
-- **Singleflight coalescing** prevents thundering herds on cold-cache concurrent requests.
-- **Stale-while-revalidate** keeps installs unblocked while metadata is refreshed in background.
-- **Precomputed abbreviated + gzip + brotli** payloads — no parse/transform/stringify on hot paths.
-- **Tarballs streamed** end-to-end; disk and (optional) S3 backends written via atomic rename.
-- **429 fallback** to stale cache, with `Retry-After` honored.
-- **Live config**: domain / SSL / S3 settings are edited in the UI and applied without restarts.
+```
+# .npmrc
+registry=https://registry.example.com/
+```
+
+npm, pnpm, yarn, and bun all read this file. There's no per-tool config to
+keep in sync.
+
+## What happens on a normal install
+
+The first install of a package goes to npmjs, gets cached, and is served back.
+After that, every install of that package reads from cache. If ten installs
+hit an uncached package at once, only one of them goes to npmjs — the other
+nine wait on it. When npmjs returns a 429, oxide serves the stale copy
+you already have instead of failing the install.
+
+Tarballs stream straight through. A 50MB package doesn't put 50MB on the
+heap.
+
+## Storage
+
+Disk by default, which is enough for most setups. If you want shared cache
+across more than one oxide instance, point it at an S3-compatible bucket from
+the admin UI. AWS, R2, MinIO, and Backblaze all work. Settings apply live, no
+restart needed.
+
+## Audit traffic
+
+`npm audit` is rarely useful during a build and is almost always slow. Oxide
+returns an empty audit response by default. You can switch it to proxy
+upstream with a short timeout, or drop audit traffic entirely, from the UI.
+
+## Why not Verdaccio?
+
+Verdaccio is fine for small teams. We hit a wall with it under heavy parallel
+CI load on a small machine: big metadata documents (the `npm` package itself
+is several MB) were slow to serve again and again, and concurrent installs
+would just queue up. Oxide is the answer to that specific shape of problem.
+
+It is not a full Verdaccio replacement. There is no plugin API yet, and
+publishing your own packages through it is not supported.
+
+## Help
+
+If something breaks — weird metric numbers, an install failing only under one
+package manager, a cert that won't issue — open an issue. Paste
+`oxide --version` and a chunk of `/metrics`. The more specific, the easier
+to chase down.
