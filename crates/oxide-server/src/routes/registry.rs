@@ -74,6 +74,13 @@ async fn serve_metadata(state: Arc<AppState>, package: String, headers: HeaderMa
         .map(|s| s.contains(ABBREVIATED))
         .unwrap_or(false);
 
+    // Locally-published packages take precedence over the upstream cache.
+    if let Some(db) = state.db.as_ref() {
+        if let Ok(Some(_)) = crate::local::LocalStore::lookup(db, &package) {
+            return serve_local_metadata(state, &package, want_abbreviated).await;
+        }
+    }
+
     let cm = match state.metadata.get(&package).await {
         Ok(c) => c,
         Err(e) => {
@@ -130,7 +137,37 @@ fn pick_payload(cm: &CachedMetadata, abbreviated: bool, accept_enc: &str) -> (By
     (cm.full.clone(), None, "application/json")
 }
 
+async fn serve_local_metadata(state: Arc<AppState>, package: &str, abbreviated: bool) -> Response {
+    let public_url = {
+        let s = state.settings.snapshot();
+        if !s.domain.public_url.is_empty() { s.domain.public_url.clone() } else { state.cfg.server.public_url.clone() }
+    };
+    let doc = match crate::local::LocalStore::build_metadata(state.db.as_ref().unwrap(), package, &public_url) {
+        Ok(v) => v,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("local metadata error: {e}")).into_response(),
+    };
+    let bytes = if abbreviated {
+        let abb = crate::transform::abbreviate(&serde_json::to_vec(&doc).unwrap_or_default()).unwrap_or_default();
+        abb
+    } else {
+        Bytes::from(serde_json::to_vec(&doc).unwrap_or_default())
+    };
+    let ct = if abbreviated { ABBREVIATED } else { "application/json" };
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, ct)
+        .header("x-oxide-source", "local")
+        .body(Body::from(bytes))
+        .unwrap()
+}
+
 async fn serve_tarball(state: Arc<AppState>, package: String, file: String) -> Response {
+    // Check local first — if this name is a local package we never go upstream.
+    if let Some(db) = state.db.as_ref() {
+        if let Ok(Some(_)) = crate::local::LocalStore::lookup(db, &package) {
+            return serve_local_tarball(state, &package, &file).await;
+        }
+    }
     let res = match state.tarballs.fetch(&package, &file).await {
         Ok(r) => r,
         Err(e) => {
@@ -150,4 +187,30 @@ async fn serve_tarball(state: Arc<AppState>, package: String, file: String) -> R
     use futures_util::StreamExt;
     let stream = res.body.map(|r| r.map_err(std::io::Error::other));
     builder.body(Body::from_stream(stream)).unwrap()
+}
+
+async fn serve_local_tarball(state: Arc<AppState>, package: &str, file: &str) -> Response {
+    let Some(local) = state.local.as_ref() else {
+        return (StatusCode::SERVICE_UNAVAILABLE, "local store unavailable").into_response();
+    };
+    // Tarball files are named `<lastSegment>-<version>.tgz`. Extract version from the filename.
+    let last_seg = package.rsplit('/').next().unwrap_or(package);
+    let prefix = format!("{last_seg}-");
+    let Some(rest) = file.strip_prefix(&prefix).and_then(|r| r.strip_suffix(".tgz")) else {
+        return (StatusCode::NOT_FOUND, "tarball name does not match package").into_response();
+    };
+    let path = local.tarball_path(package, rest);
+    match tokio::fs::File::open(&path).await {
+        Ok(f) => {
+            let len = f.metadata().await.ok().map(|m| m.len());
+            let stream = tokio_util::io::ReaderStream::new(f);
+            let mut b = Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "application/octet-stream")
+                .header("x-oxide-source", "local");
+            if let Some(l) = len { b = b.header(header::CONTENT_LENGTH, l); }
+            b.body(Body::from_stream(stream)).unwrap()
+        }
+        Err(_) => (StatusCode::NOT_FOUND, "version not found").into_response(),
+    }
 }

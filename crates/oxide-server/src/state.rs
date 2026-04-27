@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use tracing::warn;
 
 use crate::config::Config;
+use crate::db::Db;
+use crate::local::LocalStore;
 use crate::metadata::MetadataCache;
 use crate::settings::SettingsStore;
 use crate::storage;
@@ -14,6 +17,10 @@ pub struct AppState {
     pub settings: Arc<SettingsStore>,
     pub metadata: Arc<MetadataCache>,
     pub tarballs: Arc<TarballCache>,
+    /// Writable DB handle, used for publish/auth. Optional so the proxy still runs in a
+    /// pure-cache mode if the file isn't writable.
+    pub db: Option<Db>,
+    pub local: Option<Arc<LocalStore>>,
 }
 
 impl AppState {
@@ -28,11 +35,9 @@ impl AppState {
             storage::ensure_dir(&cfg.cache.tarballs.path).await?;
         }
 
-        // Live settings from sqlite: domain → public_url override; ssl/s3 watched at runtime.
         let settings = SettingsStore::open(&cfg.server.db_path)?;
         settings.spawn_poll();
 
-        // Pick the public URL: prefer the runtime "domain.publicUrl" if non-empty.
         let public_url = {
             let s = settings.snapshot();
             if !s.domain.public_url.is_empty() {
@@ -41,6 +46,18 @@ impl AppState {
                 cfg.server.public_url.clone()
             }
         };
+
+        // Open the writable DB. If the file isn't writable yet (the Bun side hasn't applied
+        // the schema), publish stays disabled until the next restart — log and continue.
+        let db = match Db::open(&cfg.server.db_path) {
+            Ok(d) => Some(d),
+            Err(e) => { warn!(?e, "publish disabled: cannot open writable db"); None }
+        };
+
+        let local = if db.is_some() {
+            storage::ensure_dir(&cfg.server.local_storage_path).await?;
+            Some(Arc::new(LocalStore::new(&cfg.server.local_storage_path)))
+        } else { None };
 
         let metadata = Arc::new(MetadataCache::new(
             cfg.cache.metadata.clone(),
@@ -56,6 +73,6 @@ impl AppState {
             settings.clone(),
         ));
 
-        Ok(Self { cfg, settings, metadata, tarballs })
+        Ok(Self { cfg, settings, metadata, tarballs, db, local })
     }
 }

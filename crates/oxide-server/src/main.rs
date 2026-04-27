@@ -7,11 +7,15 @@ use clap::Parser;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
+mod auth;
 mod coalesce;
 mod config;
+mod db;
+mod local;
 mod logger;
 mod metadata;
 mod metrics;
+mod publish;
 mod routes;
 mod s3backend;
 mod settings;

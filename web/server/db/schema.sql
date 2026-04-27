@@ -69,3 +69,52 @@ CREATE TABLE IF NOT EXISTS Setting (
   value      TEXT NOT NULL,
   updatedAt  TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 );
+
+-- Publish auth: opaque token strings issued to users for `npm publish`.
+-- Token id IS the secret — store nothing else, treat the row as the credential.
+CREATE TABLE IF NOT EXISTS Token (
+  id          TEXT PRIMARY KEY,
+  userId      INTEGER NOT NULL,
+  name        TEXT,
+  createdAt   TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  lastUsedAt  TEXT,
+  FOREIGN KEY (userId) REFERENCES User(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_token_user ON Token(userId);
+
+-- Locally-published packages. Names are unique across the whole instance,
+-- matching npm semantics. workspaceId can be NULL for personal packages.
+CREATE TABLE IF NOT EXISTS LocalPackage (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  name         TEXT NOT NULL UNIQUE,
+  workspaceId  INTEGER,
+  ownerId      INTEGER NOT NULL,
+  accessLevel  TEXT NOT NULL DEFAULT 'restricted' CHECK (accessLevel IN ('public','restricted')),
+  createdAt    TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  updatedAt    TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  FOREIGN KEY (workspaceId) REFERENCES Workspace(id) ON DELETE SET NULL,
+  FOREIGN KEY (ownerId)     REFERENCES User(id)
+);
+
+CREATE TABLE IF NOT EXISTS LocalPackageVersion (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  packageId    INTEGER NOT NULL,
+  version      TEXT NOT NULL,
+  metadata     TEXT NOT NULL,        -- the version's package.json blob (JSON, no _attachments)
+  tarballSha   TEXT NOT NULL,        -- "sha512-<base64>" (npm integrity format)
+  tarballSize  INTEGER NOT NULL,
+  publishedBy  INTEGER NOT NULL,
+  publishedAt  TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  UNIQUE (packageId, version),
+  FOREIGN KEY (packageId)   REFERENCES LocalPackage(id) ON DELETE CASCADE,
+  FOREIGN KEY (publishedBy) REFERENCES User(id)
+);
+CREATE INDEX IF NOT EXISTS idx_lpv_package ON LocalPackageVersion(packageId);
+
+CREATE TABLE IF NOT EXISTS LocalPackageDistTag (
+  packageId  INTEGER NOT NULL,
+  tag        TEXT NOT NULL,
+  version    TEXT NOT NULL,
+  PRIMARY KEY (packageId, tag),
+  FOREIGN KEY (packageId) REFERENCES LocalPackage(id) ON DELETE CASCADE
+);

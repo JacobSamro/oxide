@@ -7,6 +7,7 @@ server:
   public_url: http://localhost:4873     # fallback when no domain has been configured yet
   db_path: ./data/oxide.db
   acme_cache_dir: ./data/acme
+  local_storage_path: ./data/local
 
 log:
   level: info

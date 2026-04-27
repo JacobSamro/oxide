@@ -51,3 +51,8 @@ arc-swap = "1"
 notify = "6"
 url = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+bcrypt = "0.16"
+base64 = "0.22"
+rand = "0.8"
+parking_lot = "0.12"
+semver = "1"

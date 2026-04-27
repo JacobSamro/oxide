@@ -29,7 +29,7 @@
 </template>
 
 <script>
-import { Boxes, Layers, Users, Activity, LogOut, Settings } from 'lucide-vue-next'
+import { Boxes, Layers, Users, Activity, LogOut, Settings, Key } from 'lucide-vue-next'
 import { push } from 'notivue'
 
 export default {
@@ -41,6 +41,7 @@ export default {
         { to: '/', label: 'Overview', icon: Activity },
         { to: '/workspaces', label: 'Workspaces', icon: Layers },
         { to: '/users', label: 'Users', icon: Users },
+        { to: '/tokens', label: 'Publish tokens', icon: Key },
         { to: '/settings', label: 'Settings', icon: Settings },
       ],
     }

@@ -65,6 +65,35 @@ restart needed.
 returns an empty audit response by default. You can switch it to proxy
 upstream with a short timeout, or drop audit traffic entirely, from the UI.
 
+## Publishing your own packages
+
+Oxide is a real registry, not just a cache. You can `npm publish` to it.
+
+1. In the admin UI, go to **Publish tokens** and create one. Copy it when it
+   appears — you only see it once.
+2. Add it to your `.npmrc` next to your registry line:
+
+```
+registry=https://registry.example.com/
+//registry.example.com/:_authToken=<your token>
+```
+
+3. From your package directory:
+
+```
+npm publish
+# or
+bun publish
+```
+
+The first publish makes you the owner of that package name. After that, only
+you (or an admin) can publish new versions of it. `npm install <pkg>` and the
+equivalent in pnpm/yarn/bun will fetch your published version directly from
+oxide — there's no upstream lookup for names that exist locally.
+
+`npm login` works too, if you'd rather sign in with your username/password and
+let npm handle the token. Both flows produce the same kind of token.
+
 ## Why not Verdaccio?
 
 Verdaccio is fine for small teams. We hit a wall with it under heavy parallel
@@ -72,8 +101,8 @@ CI load on a small machine: big metadata documents (the `npm` package itself
 is several MB) were slow to serve again and again, and concurrent installs
 would just queue up. Oxide is the answer to that specific shape of problem.
 
-It is not a full Verdaccio replacement. There is no plugin API yet, and
-publishing your own packages through it is not supported.
+It is not a full Verdaccio replacement. There's no plugin API yet, no
+unpublish, and no two-factor auth.
 
 ## Help
 

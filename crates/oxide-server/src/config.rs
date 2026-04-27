@@ -33,6 +33,9 @@ pub struct ServerConfig {
     /// ACME cache dir — issued certs are persisted here.
     #[serde(default = "default_acme_cache")]
     pub acme_cache_dir: PathBuf,
+    /// Where locally-published package tarballs live. Distinct from the upstream cache.
+    #[serde(default = "default_local_storage")]
+    pub local_storage_path: PathBuf,
 }
 
 impl Default for ServerConfig {
@@ -43,6 +46,7 @@ impl Default for ServerConfig {
             public_url: default_public_url(),
             db_path: default_db_path(),
             acme_cache_dir: default_acme_cache(),
+            local_storage_path: default_local_storage(),
         }
     }
 }
@@ -52,6 +56,7 @@ fn default_https_listen() -> String { "0.0.0.0:443".into() }
 fn default_public_url() -> String { "http://localhost:4873".into() }
 fn default_db_path() -> PathBuf { PathBuf::from("./data/oxide.db") }
 fn default_acme_cache() -> PathBuf { PathBuf::from("./data/acme") }
+fn default_local_storage() -> PathBuf { PathBuf::from("./data/local") }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct LogConfig {
