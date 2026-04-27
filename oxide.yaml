@@ -1,0 +1,39 @@
+# Bootstrap config. Domain / SSL / S3 are managed at runtime through the admin UI
+# and persisted to the same sqlite file (db_path). Anything in this file is read once at boot.
+
+server:
+  http_listen: 0.0.0.0:80
+  https_listen: 0.0.0.0:443
+  public_url: http://localhost:4873     # fallback when no domain has been configured yet
+  db_path: ./data/oxide.db
+  acme_cache_dir: ./data/acme
+
+log:
+  level: info
+  json: false
+
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+    metadata_ttl: 7d
+    stale_while_revalidate: 24h
+    timeout: 30s
+    max_connections: 200
+    max_concurrent_metadata_fetches: 50
+    max_concurrent_tarball_fetches: 100
+
+cache:
+  metadata:
+    enabled: true
+    memory_max_bytes: 512mb
+    disk_enabled: true
+    disk_path: ./data/metadata
+    precompute_abbreviated: true
+    precompress: true
+  tarballs:
+    enabled: true
+    backend: filesystem                  # overridden at runtime when S3 is enabled in the UI
+    path: ./data/tarballs
+
+audit:
+  mode: disabled
